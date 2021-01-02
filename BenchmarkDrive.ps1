@@ -6,13 +6,13 @@
     [int]$warmupSec=0,
     [int]$cooldownSec=0,
     [int]$restSec=1,
-    [string]$diskspd='C:\prog\Diskspd-v2.0.15\x86fre\diskspd.exe'
+    [string]$diskspd='%ProgramFiles%\diskspd.exe'
 
 )
 
 # get test summary object
 # assume one target and one timespan
-function sum-test {
+function measure-performance {
     param ( $test, $xmlFilePath, $driveObj )
     $x = [xml](Get-Content $xmlFilePath)
     $o = New-Object psobject
@@ -31,20 +31,20 @@ function sum-test {
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Test Params' -Value $test.params
     # io metrics
     Add-Member -InputObject $o -MemberType noteproperty -Name 'TestTimeSeconds' -Value $x.Results.TimeSpan.TestTimeSeconds
-    Add-Member -InputObject $o -MemberType noteproperty -Name 'WriteRatio' -Value ($x.Results.Profile.TimeSpans.TimeSpan.Targets.Target.WriteRatio | select -first 1)
+    Add-Member -InputObject $o -MemberType noteproperty -Name 'WriteRatio' -Value ($x.Results.Profile.TimeSpans.TimeSpan.Targets.Target.WriteRatio | Select-Object -first 1)
     Add-Member -InputObject $o -MemberType noteproperty -Name 'ThreadCount' -Value $x.Results.TimeSpan.ThreadCount
-    Add-Member -InputObject $o -MemberType noteproperty -Name 'RequestCount' -Value ($x.Results.Profile.TimeSpans.TimeSpan.Targets.Target.RequestCount | select -first 1)
-    Add-Member -InputObject $o -MemberType noteproperty -Name 'BlockSize' -Value ($x.Results.Profile.TimeSpans.TimeSpan.Targets.Target.BlockSize | select -first 1)
+    Add-Member -InputObject $o -MemberType noteproperty -Name 'RequestCount' -Value ($x.Results.Profile.TimeSpans.TimeSpan.Targets.Target.RequestCount | Select-Object -first 1)
+    Add-Member -InputObject $o -MemberType noteproperty -Name 'BlockSize' -Value ($x.Results.Profile.TimeSpans.TimeSpan.Targets.Target.BlockSize | Select-Object -first 1)
 
     # sum read and write iops across all threads and targets
     $ri = ($x.Results.TimeSpan.Thread.Target |
-            measure -sum -Property ReadCount).Sum
+            Measure-Object -sum -Property ReadCount).Sum
     $wi = ($x.Results.TimeSpan.Thread.Target |
-            measure -sum -Property WriteCount).Sum
+            Measure-Object -sum -Property WriteCount).Sum
     $rb = ($x.Results.TimeSpan.Thread.Target |
-            measure -sum -Property ReadBytes).Sum
+            Measure-Object -sum -Property ReadBytes).Sum
     $wb = ($x.Results.TimeSpan.Thread.Target |
-            measure -sum -Property WriteBytes).Sum
+            Measure-Object -sum -Property WriteBytes).Sum
     Add-Member -InputObject $o -MemberType noteproperty -Name 'ReadCount' -Value $ri
     Add-Member -InputObject $o -MemberType noteproperty -Name 'WriteCount' -Value $wi
     Add-Member -InputObject $o -MemberType noteproperty -Name 'ReadBytes' -Value $rb
@@ -52,8 +52,8 @@ function sum-test {
 
     # latency
     $l = @(); foreach ($i in 25,50,75,90,95,99,99.9,100) { $l += ,[string]$i }
-    $h = @{}; $x.Results.TimeSpan.Latency.Bucket |% { $h[$_.Percentile] = $_ } # AY, hash all percentiles in $h
-    $l |% {
+    $h = @{}; $x.Results.TimeSpan.Latency.Bucket |ForEach-Object { $h[$_.Percentile] = $_ } # AY, hash all percentiles in $h
+    $l |ForEach-Object {
         $b = $h[$_];
         Add-Member -InputObject $o -MemberType noteproperty -Name ('{0}% r' -f $_) -Value $b.ReadMilliseconds
         Add-Member -InputObject $o -MemberType noteproperty -Name ('{0}% w' -f $_) -Value $b.WriteMilliseconds
@@ -62,7 +62,7 @@ function sum-test {
     return $o
 }
 
-function sum-tests {
+function measure-performances {
     param ( $tests )
 
     $o = New-Object psobject
@@ -78,27 +78,27 @@ function sum-tests {
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Test Duration [s]' -Value $tests[0].'Duration [s]'
 
     # io
-    $t_sr=$tests |? {$_.'Test Name' -eq 'Sequential read'}
+    $t_sr=$tests |Where-Object {$_.'Test Name' -eq 'Sequential read'}
     $v=$t_sr.ReadBytes/$t_sr.TestTimeSeconds/1024/1024
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Sequential Read 1MB [MB/s]' -Value $v
 
-    $t_sw=$tests |? {$_.'Test Name' -eq 'Sequential write'}
+    $t_sw=$tests |Where-Object {$_.'Test Name' -eq 'Sequential write'}
     $v=$t_sw.WriteBytes/$t_sw.TestTimeSeconds/1024/1024
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Sequential Write 1MB [MB/s]' -Value $v
 
-    $t_rr=$tests |? {$_.'Test Name' -eq 'Random read'}
+    $t_rr=$tests |Where-Object {$_.'Test Name' -eq 'Random read'}
     $v=$t_rr.ReadBytes/$t_rr.TestTimeSeconds/1024/1024
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Read 4KB (QD=1) [MB/s]' -Value $v
 
-    $t_rw=$tests |? {$_.'Test Name' -eq 'Random write'}
+    $t_rw=$tests |Where-Object {$_.'Test Name' -eq 'Random write'}
     $v=$t_rw.WriteBytes/$t_rw.TestTimeSeconds/1024/1024
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Write 4KB (QD=1) [MB/s]' -Value $v
 
-    $t_r2r=$tests |? {$_.'Test Name' -eq 'Random QD32 read'}
+    $t_r2r=$tests |Where-Object {$_.'Test Name' -eq 'Random QD32 read'}
     $v=$t_r2r.ReadBytes/$t_r2r.TestTimeSeconds/1024/1024
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Read 4KB (QD=32) [MB/s]' -Value $v
 
-    $t_r2w=$tests |? {$_.'Test Name' -eq 'Random QD32 write'}
+    $t_r2w=$tests |Where-Object {$_.'Test Name' -eq 'Random QD32 write'}
     $v=$t_r2w.WriteBytes/$t_r2w.TestTimeSeconds/1024/1024
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Write 4KB (QD=32) [MB/s]' -Value $v
 
@@ -108,9 +108,14 @@ function sum-tests {
 # initialize test file
 # consider "fsutil file createnew <name of file> <size in bytes>" though can't control caching or content
 # best to do one per drive and not each test. also, had effect on "test duration" when was part of the test.
+# check environment
+# todo: check $diskspd exist?
+
 $testFileParams='{0}benchmark.tmp' -f $drive
+# todo: check testFileParams exists?
 $xmlFile=('{0}-Generation.xml' -f $batchId);
-$params=( ('-Rxml -d1 -S -Z1M -c{0}' -f $testSize) ,$testFileParams) -join ' '; # make sure to write with cache disabled, or else on slow systems this will exit with data still writing from cache to disk.
+$params=( ('-Rxml -d1 -S -Z1M -c{0}' -f $testSize) ,$testFileParams) -join ' ';
+ # make sure to write with cache disabled, or else on slow systems this will exit with data still writing from cache to disk.
 Write-Host $params
 Write-Host $xmlFile
 & $diskspd ($params -split ' ') > $xmlFile
@@ -140,15 +145,17 @@ foreach ($test in @{name='Sequential read'; params='-b1M -o1 -t1 -w0 -Z1M'},
         & $diskspd ($params -split ' ') > $xmlFile
 
         # read result and write to batch file
-        $driveObj=[System.IO.DriveInfo]::GetDrives() | ? {$_.Name -eq $drive }
-        $testResult=sum-test $test $xmlFile $driveObj 
+        $driveObj=[System.IO.DriveInfo]::GetDrives() | Where-Object {$_.Name -eq $drive }
+        $testResult=measure-performance $test $xmlFile $driveObj 
         $testResult | Export-Csv ('{0}.csv' -f $batchId) -NoTypeInformation -Append
         $tests+=$testResult
 }
 
 # sum drive tests to a single row
-$testsSum = sum-tests $tests
+$testsSum = measure-performances $tests
 $testsSum 
 
 $date=(Get-Date -format "yyyy-MM-dd")
 $testsSum | Export-Csv ('{0}.csv' -f $date) -NoTypeInformation -Append
+# todo: display name of output csv file
+# 
