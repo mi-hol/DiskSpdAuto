@@ -1,6 +1,6 @@
 ﻿param (
     [Parameter(Mandatory = $true)][string]$drive,
-    [string]$batchId=(Get-Date -format "yyyy-MM-dd_hh-mm-ss"), # 'u' and 's' will have colons, which is bad for filenames
+    [string]$batchId=(Get-Date -format "yyyy-MM-dd_HH-mm-ss"), # 'u' and 's' will have colons, which is bad for filenames
     [string]$testSize='1G',
     [int]$durationSec=5, # less than 5sec gave zero results
     [int]$warmupSec=0,
@@ -12,7 +12,7 @@
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-$script:Version = "0.0.1"
+$script:Version = "0.2.0"
 
 # get test summary object
 # assume one target and one timespan
@@ -57,11 +57,21 @@ function measure-performance {
     # latency
     $l = @(); foreach ($i in 25,50,75,90,95,99,99.9,100) { $l += ,[string]$i }
     $h = @{}; $x.Results.TimeSpan.Latency.Bucket |ForEach-Object { $h[$_.Percentile] = $_ } # AY, hash all percentiles in $h
-    $l |ForEach-Object {
-        $b = $h[$_];
-        Add-Member -InputObject $o -MemberType noteproperty -Name ('{0}% r' -f $_) -Value $b.ReadMilliseconds
-        Add-Member -InputObject $o -MemberType noteproperty -Name ('{0}% w' -f $_) -Value $b.WriteMilliseconds
-    }
+ 
+ # todo: seems unused code, to be confirmed!!!
+        #todo: only when comfirmed, fix error 
+        # ForEach-Object: Z:\DiskSpdAuto\BenchmarkDrive.ps1:60
+        # Line |
+        #   60 |      $l |ForEach-Object {
+        #      |          ~~~~~~~~~~~~~~~~
+        #      | The property 'WriteMilliseconds' cannot be found on this object. Verify that the property exists.
+
+    # $l |ForEach-Object {
+    #     #$b = $h[$_];
+    #     $b = $h[$_]
+    #     #Add-Member -InputObject $o -MemberType noteproperty -Name ('{0}% r' -f $_) -Value $b.ReadMilliseconds
+    #     #Add-Member -InputObject $o -MemberType noteproperty -Name ('{0}% w' -f $_) -Value $b.WriteMilliseconds
+    # }
 
     return $o
 }
@@ -82,61 +92,70 @@ function measure-performances {
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Test Duration [s]' -Value $tests[0].'Duration [s]'
 
     # io
+    #[decimal] with 1 digit
     $t_sr=$tests |Where-Object {$_.'Test Name' -eq 'Sequential read'}
-    $v=$t_sr.ReadBytes/$t_sr.TestTimeSeconds/1024/1024
+    $v=($t_sr.ReadBytes/$t_sr.TestTimeSeconds/1024/1024).ToString("F1")
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Sequential Read 1MB [MB/s]' -Value $v
 
     $t_sw=$tests |Where-Object {$_.'Test Name' -eq 'Sequential write'}
-    $v=$t_sw.WriteBytes/$t_sw.TestTimeSeconds/1024/1024
+    $v=($t_sw.WriteBytes/$t_sw.TestTimeSeconds/1024/1024).ToString("F1")
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Sequential Write 1MB [MB/s]' -Value $v
 
     $t_rr=$tests |Where-Object {$_.'Test Name' -eq 'Random read'}
-    $v=$t_rr.ReadBytes/$t_rr.TestTimeSeconds/1024/1024
+    $v=($t_rr.ReadBytes/$t_rr.TestTimeSeconds/1024/1024).ToString("F1")
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Read 4KB (QD=1) [MB/s]' -Value $v
 
     $t_rw=$tests |Where-Object {$_.'Test Name' -eq 'Random write'}
-    $v=$t_rw.WriteBytes/$t_rw.TestTimeSeconds/1024/1024
+    $v=($t_rw.WriteBytes/$t_rw.TestTimeSeconds/1024/1024).ToString("F1")
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Write 4KB (QD=1) [MB/s]' -Value $v
 
     $t_r2r=$tests |Where-Object {$_.'Test Name' -eq 'Random QD32 read'}
-    $v=$t_r2r.ReadBytes/$t_r2r.TestTimeSeconds/1024/1024
+    $v=($t_r2r.ReadBytes/$t_r2r.TestTimeSeconds/1024/1024).ToString("F1")
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Read 4KB (QD=32) [MB/s]' -Value $v
 
     $t_r2w=$tests |Where-Object {$_.'Test Name' -eq 'Random QD32 write'}
-    $v=$t_r2w.WriteBytes/$t_r2w.TestTimeSeconds/1024/1024
+    $v=($t_r2w.WriteBytes/$t_r2w.TestTimeSeconds/1024/1024).ToString("F1")
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Write 4KB (QD=32) [MB/s]' -Value $v
 
     return $o
 }
-function Test-UserDrivePath{
-    [OutputType([bool])]
-    # Param(
-    #   [Parameter(Mandatory= $True, Position=0)][ValidateUserDrive()][String]$Path
-    #   )
-    # $True
-    Param(
-#        [ValidateDrive("C", "D", "Variable", "Function")]
-        [ValidateDrive("C", "D", "Variable", "Function")]
-        [String]$Path
-    )}
+
 ####################################
 # Main
 ####################################
 
-Test-UserDrivePath -Path $drive
+if (test-path -Path $drive){
+    # passed path exist
+} else {
+    Write-Error "parameter 'drive' does not exist or is not accessible - $Drive"
+}
 # initialize test file
 # consider "fsutil file createnew <name of file> <size in bytes>" though can't control caching or content
 # best to do one per drive and not each test. also, had effect on "test duration" when was part of the test.
 # check environment
 # todo: check $diskspd exist?
+if (test-path -Path $diskspd -PathType leaf){
+    # passed path exist
+} else {
+    Write-Error "parameter 'diskspd' does not exist, aborting - $diskspd"
+    Break
+}
 
-$testFileParams='{0}benchmark.tmp' -f $drive
+#$testFileParams="{0}benchmark.tmp" -f $drive
+# todo: handle other drive parameter values 'a', 'a:', 'a:\'
+$testFileParams="${drive}benchmark.${batchId}.tmp" 
 # todo: check testFileParams exists?
+if (test-path -Path $testFileParams -PathType leaf){
+    # passed path exist
+    Write-Error "parameter 'testFileParams' already exists, aborting - $testFileParams"
+    Break
+}
 $xmlFile=('{0}-Generation.xml' -f $batchId);
 $params=( ('-Rxml -d1 -S -Z1M -c{0}' -f $testSize) ,$testFileParams) -join ' ';
  # make sure to write with cache disabled, or else on slow systems this will exit with data still writing from cache to disk.
-Write-Host $params
+Write-Host "Benchmark parameters:$params"
 Write-Host $xmlFile
+# run benchmark program
 & $diskspd ($params -split ' ') > $xmlFile
 
 # fixed params for tests
@@ -177,4 +196,6 @@ $testsSum
 $date=(Get-Date -format "yyyy-MM-dd")
 $testsSum | Export-Csv ('{0}.csv' -f $date) -NoTypeInformation -Append
 # todo: display name of output csv file
+
+Remove-Item -Path $testFileParams
 # 
