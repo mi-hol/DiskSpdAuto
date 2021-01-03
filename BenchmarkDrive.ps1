@@ -6,13 +6,14 @@
     [int]$warmupSec=0,
     [int]$cooldownSec=0,
     [int]$restSec=1,
-    [string]$diskspd='%ProgramFiles%\diskspd.exe'
+    #[string]$diskspd='%ProgramFiles%\diskspd.exe'
+    [string]$diskspd='.\diskspd.exe'
 
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-$script:Version = "0.2.0"
+$script:Version = "0.2.1"
 
 # get test summary object
 # assume one target and one timespan
@@ -87,34 +88,35 @@ function measure-performances {
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Drive VolumeLabel' -Value $tests[0].'Drive VolumeLabel'
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Batch' -Value $tests[0].Batch
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Test Time' -Value $tests[0].'Test Time'
-
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Test File Size' -Value $tests[0].'Test File Size'
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Test Duration [s]' -Value $tests[0].'Duration [s]'
 
     # io
-    #[decimal] with 1 digit
+    #round calculation result to [decimal] with 1 digit
+    [decimal]$v=0
+
     $t_sr=$tests |Where-Object {$_.'Test Name' -eq 'Sequential read'}
-    $v=($t_sr.ReadBytes/$t_sr.TestTimeSeconds/1024/1024).ToString("F1")
-    Add-Member -InputObject $o -MemberType noteproperty -Name 'Sequential Read 1MB [MB/s]' -Value $v
+    $v=([Math]::Round([decimal]($t_sr.ReadBytes/$t_sr.TestTimeSeconds/1024/1024),1))
+    Add-Member -InputObject $o -MemberType noteproperty -Name 'Sequential Read  1MB     [MB/s]' -Value $v
 
     $t_sw=$tests |Where-Object {$_.'Test Name' -eq 'Sequential write'}
-    $v=($t_sw.WriteBytes/$t_sw.TestTimeSeconds/1024/1024).ToString("F1")
-    Add-Member -InputObject $o -MemberType noteproperty -Name 'Sequential Write 1MB [MB/s]' -Value $v
+    $v=([Math]::Round([decimal]($t_sw.WriteBytes/$t_sw.TestTimeSeconds/1024/1024),1))
+    Add-Member -InputObject $o -MemberType noteproperty -Name 'Sequential Write 1MB     [MB/s]' -Value $v
 
     $t_rr=$tests |Where-Object {$_.'Test Name' -eq 'Random read'}
-    $v=($t_rr.ReadBytes/$t_rr.TestTimeSeconds/1024/1024).ToString("F1")
-    Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Read 4KB (QD=1) [MB/s]' -Value $v
+    $v=([Math]::Round([decimal]($t_rr.ReadBytes/$t_rr.TestTimeSeconds/1024/1024),1))
+    Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Read  4KB (QD=1)  [MB/s]' -Value $v
 
     $t_rw=$tests |Where-Object {$_.'Test Name' -eq 'Random write'}
-    $v=($t_rw.WriteBytes/$t_rw.TestTimeSeconds/1024/1024).ToString("F1")
-    Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Write 4KB (QD=1) [MB/s]' -Value $v
+    $v=([Math]::Round([decimal]($t_rw.WriteBytes/$t_rw.TestTimeSeconds/1024/1024),1))
+    Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Write 4KB (QD=1)  [MB/s]' -Value $v
 
     $t_r2r=$tests |Where-Object {$_.'Test Name' -eq 'Random QD32 read'}
-    $v=($t_r2r.ReadBytes/$t_r2r.TestTimeSeconds/1024/1024).ToString("F1")
-    Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Read 4KB (QD=32) [MB/s]' -Value $v
+    $v=([Math]::Round([decimal]($t_r2r.ReadBytes/$t_r2r.TestTimeSeconds/1024/1024),1))
+    Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Read  4KB (QD=32) [MB/s]' -Value $v
 
     $t_r2w=$tests |Where-Object {$_.'Test Name' -eq 'Random QD32 write'}
-    $v=($t_r2w.WriteBytes/$t_r2w.TestTimeSeconds/1024/1024).ToString("F1")
+    $v=([Math]::Round([decimal]($t_r2w.WriteBytes/$t_r2w.TestTimeSeconds/1024/1024),1))
     Add-Member -InputObject $o -MemberType noteproperty -Name 'Random Write 4KB (QD=32) [MB/s]' -Value $v
 
     return $o
@@ -123,42 +125,42 @@ function measure-performances {
 ####################################
 # Main
 ####################################
-
+# check environment
+# 1. check $drive exist, else abort
+# todo: handle other drive parameter values 'a', 'a:', 'a:\'
 if (test-path -Path $drive){
-    # passed path exist
+    # passed drive exist
 } else {
     Write-Error "parameter 'drive' does not exist or is not accessible - $Drive"
+}
+
+# 2. check $diskspd exist, else abort
+if (test-path -Path $diskspd -PathType leaf){
+    # passed diskspd exist
+} else {
+    Write-Error "parameter 'diskspd' does not exist, aborting - $diskspd"
+}
+
+$testFileParams="${drive}benchmark.${batchId}.tmp" 
+# 3. check testFileParams does NOT exists
+if (test-path -Path $testFileParams -PathType leaf){
+    Write-Error "parameter 'testFileParams' already exists, aborting - $testFileParams"
 }
 # initialize test file
 # consider "fsutil file createnew <name of file> <size in bytes>" though can't control caching or content
 # best to do one per drive and not each test. also, had effect on "test duration" when was part of the test.
-# check environment
-# todo: check $diskspd exist?
-if (test-path -Path $diskspd -PathType leaf){
-    # passed path exist
-} else {
-    Write-Error "parameter 'diskspd' does not exist, aborting - $diskspd"
-    Break
-}
-
-#$testFileParams="{0}benchmark.tmp" -f $drive
-# todo: handle other drive parameter values 'a', 'a:', 'a:\'
-$testFileParams="${drive}benchmark.${batchId}.tmp" 
-# todo: check testFileParams exists?
-if (test-path -Path $testFileParams -PathType leaf){
-    # passed path exist
-    Write-Error "parameter 'testFileParams' already exists, aborting - $testFileParams"
-    Break
-}
-$xmlFile=('{0}-Generation.xml' -f $batchId);
-$params=( ('-Rxml -d1 -S -Z1M -c{0}' -f $testSize) ,$testFileParams) -join ' ';
- # make sure to write with cache disabled, or else on slow systems this will exit with data still writing from cache to disk.
-Write-Host "Benchmark parameters:$params"
-Write-Host $xmlFile
+$diskspdOutputFile=('{0}-Generation.xml' -f $batchId);
 # run benchmark program
-& $diskspd ($params -split ' ') > $xmlFile
+$params=( ('-Rxml -d1 -S -Z1M -c{0}' -f $testSize) ,$testFileParams) -join ' ';
+# make sure to write with cache disabled, or else on slow systems this will exit with data still writing from cache to disk.
+Write-Host "Running Benchmark program:$diskspd" `
+    " - parameters:$params" `
+    " - outputfile:$diskspdOutputFile"
 
-# fixed params for tests
+# todo: convert to function with error checks
+& $diskspd ($params -split ' ') > $diskspdOutputFile
+
+# fixed params for next tests
 $fixedParams='-L -S -Rxml'
 
 # batch auto params
@@ -171,21 +173,26 @@ foreach ($test in @{name='Sequential read'; params='-b1M -o1 -t1 -w0 -Z1M'},
     @{name='Random read'; params='-b4K -o1 -t1 -r -w0 -Z1M'},
     @{name='Random write'; params='-b4K -o1 -t1 -r -w100 -Z1M'},
     @{name='Random QD32 read'; params='-b4K -o32 -t1 -r -w0 -Z1M'},
-    @{name='Random QD32 write'; params='-b4K -o32 -t1 -r -w100 -Z1M'}<#,
+    @{name='Random QD32 write'; params='-b4K -o32 -t1 -r -w100 -Z1M'}
+    <# todo: verify why this was commented out
+    ,
     @{name='Random T32 read'; params='-b4k -o1 -t32 -r -w0 -Z1M'},
-    @{name='Random T32 write'; params='-b4k -o1 -t32 -r -w100 -Z1M'}#>) {
+    @{name='Random T32 write'; params='-b4k -o1 -t32 -r -w100 -Z1M'}
+    #>
+    ) {
         # run test
         $params=($fixedParams,$batchAutoParam,$test.params,$testFileParams) -join ' ';
-        $xmlFile=('{0}-{1}.xml' -f $batchId, $test.name);
+        $diskspdOutputFile=('{0}-{1}.xml' -f $batchId, $test.name);
         Write-Host $params
-        Write-Host $xmlFile
+        Write-Host $diskspdOutputFile
         Start-Sleep $restSec # sleep a sec to calm down IO
-        & $diskspd ($params -split ' ') > $xmlFile
+        # todo: convert to function with error checks
+        & $diskspd ($params -split ' ') > $diskspdOutputFile
 
         # read result and write to batch file
         $driveObj=[System.IO.DriveInfo]::GetDrives() | Where-Object {$_.Name -eq $drive }
-        $testResult=measure-performance $test $xmlFile $driveObj 
-        $testResult | Export-Csv ('{0}.csv' -f $batchId) -NoTypeInformation -Append
+        $testResult=measure-performance $test $diskspdOutputFile $driveObj 
+        $testResult | Export-Csv "${batchId}-BenchMarkResults.csv" -NoTypeInformation -Append
         $tests+=$testResult
 }
 
@@ -193,8 +200,7 @@ foreach ($test in @{name='Sequential read'; params='-b1M -o1 -t1 -w0 -Z1M'},
 $testsSum = measure-performances $tests
 $testsSum 
 
-$date=(Get-Date -format "yyyy-MM-dd")
-$testsSum | Export-Csv ('{0}.csv' -f $date) -NoTypeInformation -Append
+$testsSum | Export-Csv "BenchMarkResultsSummarized.csv" -NoTypeInformation -Append
 # todo: display name of output csv file
 
 Remove-Item -Path $testFileParams
