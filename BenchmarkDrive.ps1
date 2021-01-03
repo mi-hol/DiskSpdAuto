@@ -10,6 +10,10 @@
 
 )
 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+$script:Version = "0.0.1"
+
 # get test summary object
 # assume one target and one timespan
 function measure-performance {
@@ -104,7 +108,22 @@ function measure-performances {
 
     return $o
 }
+function Test-UserDrivePath{
+    [OutputType([bool])]
+    # Param(
+    #   [Parameter(Mandatory= $True, Position=0)][ValidateUserDrive()][String]$Path
+    #   )
+    # $True
+    Param(
+#        [ValidateDrive("C", "D", "Variable", "Function")]
+        [ValidateDrive("C", "D", "Variable", "Function")]
+        [String]$Path
+    )}
+####################################
+# Main
+####################################
 
+Test-UserDrivePath -Path $drive
 # initialize test file
 # consider "fsutil file createnew <name of file> <size in bytes>" though can't control caching or content
 # best to do one per drive and not each test. also, had effect on "test duration" when was part of the test.
