@@ -1,14 +1,16 @@
 ﻿param (
     [Parameter(Mandatory = $true)][string]$drive,
     [string]$batchId=(Get-Date -format "yyyy-MM-dd_HH-mm-ss"), # 'u' and 's' will have colons, which is bad for filenames
-    [string]$testSize='1G',
+    [string]$testSize='10M',
     [int]$durationSec=5, # less than 5sec gave zero results
     [int]$warmupSec=0,
     [int]$cooldownSec=0,
     [int]$restSec=1,
+    #todo: add search logic for diskspd
     #[string]$diskspd='%ProgramFiles%\diskspd.exe'
     [string]$diskspd='.\diskspd.exe'
-
+#todo: add usage
+# A parameter cannot be found that matches parameter name 'filesize'
 )
 
 Set-StrictMode -Version Latest
@@ -191,17 +193,21 @@ foreach ($test in @{name='Sequential read'; params='-b1M -o1 -t1 -w0 -Z1M'},
 
         # read result and write to batch file
         $driveObj=[System.IO.DriveInfo]::GetDrives() | Where-Object {$_.Name -eq $drive }
-        $testResult=measure-performance $test $diskspdOutputFile $driveObj 
-        $testResult | Export-Csv "${batchId}-BenchMarkResults.csv" -NoTypeInformation -Append
+        $testResult=measure-performance $test $diskspdOutputFile $driveObj
+        
+        $diskspdOutputCsvFile = "${batchId}-BenchMarkResults.csv"
+        $testResult | Export-Csv $diskspdOutputCsvFile -NoTypeInformation -Append
         $tests+=$testResult
 }
 
 # sum drive tests to a single row
 $testsSum = measure-performances $tests
 $testsSum 
-
-$testsSum | Export-Csv "BenchMarkResultsSummarized.csv" -NoTypeInformation -Append
-# todo: display name of output csv file
+$diskspdOutputCsvFileSummary = "BenchMarkResultsSummarized.csv"
+$testsSum | Export-Csv $diskspdOutputCsvFileSummary -NoTypeInformation -Append
+# display name of output csv files
+Write-Host "Benchmark results for this run: $diskspdOutputCsvFile" 
+Write-Host "Summary of all benchmark results: $diskspdOutputCsvFileSummary" 
 
 Remove-Item -Path $testFileParams
 # 

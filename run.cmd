@@ -1,0 +1,1 @@
+. .\DiskSpdAuto\BenchmarkDrive.ps1 'z:\' -diskspd $env:programfiles\diskspd.exe
